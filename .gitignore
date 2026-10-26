@@ -1,0 +1,11 @@
+/target
+bacon.log
+/website/site
+.bacon-locations
+bacon-analysis.json
+/result
+/build
+/.build-cache
+/build-scripts/_local.sh
+/bacon_*.zip
+/trav

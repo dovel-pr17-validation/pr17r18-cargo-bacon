@@ -1,0 +1,126 @@
+#:schema https://dystroy.org/bacon/.bacon.schema.json
+
+# A bacon.toml file dedicated to the bacon tool
+# (if you're looking for the current default bacon.toml file,
+#  generate it with `bacon --init` or download it from
+#  https://github.com/Canop/bacon/tree/main/defaults)
+
+default_job = "check-all"
+env.CARGO_TERM_COLOR = "always"
+
+# uncomment for sound
+# sound.enabled = true
+# sound.base_volume = "20%"
+
+# This alternative to 'check' demonstrates the use of the JSON output
+# of cargo check - see https://github.com/Canop/bacon/issues/249
+[jobs.json-check]
+command = [
+	"cargo", "check",
+	"--message-format", "json-diagnostic-rendered-ansi",
+]
+need_stdout = true
+analyzer = "cargo_json"
+
+[jobs.check]
+command = ["cargo", "check"]
+need_stdout = false
+
+[jobs.check-windows]
+command = [
+	"cross", "build",
+	"--target", "x86_64-pc-windows-gnu",
+	"--features", "clipboard,sound"
+]
+
+[jobs.check-nightly]
+command = [
+	"cargo", "+nightly",
+	"check",
+	"--all-targets",
+]
+need_stdout = false
+
+[jobs.check-all]
+command = [
+	"cargo", "check",
+	"--all-targets",
+	"--features", "clipboard,sound",
+]
+need_stdout = false
+
+[jobs.fmt]
+command = ["cargo", "+nightly", "fmt"]
+
+[jobs.nightly]
+command = [
+	"cargo",
+	"+nightly",
+	"check",
+	"--all-targets",
+]
+need_stdout = false
+
+[jobs.win]
+command = [
+	"cross", "build",
+	"--target", "x86_64-pc-windows-gnu",
+]
+
+[jobs.test]
+command = ["cargo", "test"]
+need_stdout = true
+#on_success = "play-sound(90s-game-ui-6,volume=50)"
+#on_failure = "play-sound(beep-warning)"
+
+[jobs.doc]
+command = ["cargo", "doc", "--no-deps"]
+need_stdout = false
+
+# If the doc compiles, then it opens in your browser and bacon switches
+# to the previous job
+[jobs.doc-open]
+command = ["cargo", "doc", "--no-deps", "--open"]
+need_stdout = false
+on_success = "back" # so that we don't open the browser at each change
+
+[jobs.clippy-all]
+command = ["cargo", "clippy", "--all-features", "--all-targets"]
+need_stdout = false
+
+# Pedantic job refined for bacon's source code.
+[jobs.pedantic]
+command = [
+	"cargo", "clippy", "--", "-W", "clippy::pedantic",
+	"-A", "clippy::collapsible_else_if",
+	"-A", "clippy::default_trait_access",
+	"-A", "clippy::if_not_else",
+	"-A", "clippy::items_after_statements",
+	"-A", "clippy::match_same_arms",
+	"-A", "clippy::missing_errors_doc",
+	"-A", "clippy::must_use_candidate",
+	"-A", "clippy::return_self_not_must_use",
+	"-A", "clippy::single_match_else",
+	"-A", "clippy::struct_excessive_bools",
+	"-A", "clippy::struct_field_names",
+	"-A", "clippy::too_many_lines",
+	"-A", "clippy::unnecessary_debug_formatting",
+	"-A", "clippy::wildcard_imports",
+]
+need_stdout = false
+
+[skin]
+change_badge_bg = 5
+
+[keybindings]
+c = "job:clippy-all"
+ctrl-c = "copy-unstyled-output"
+#n = "next-match"
+#shift-n = "previous-match"
+#h = "play-sound(name=car-horn)"
+#b = "play-sound(name=beep-6)"
+f = "job:fmt"
+alt-w = "job:win"
+alt-b = "toggle-backtrace(0)" # disable backtrace when set with env var
+cmd-e = "play-sound"
+p = "job:pedantic"

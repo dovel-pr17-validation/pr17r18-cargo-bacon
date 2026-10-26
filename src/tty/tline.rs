@@ -1,0 +1,222 @@
+use {
+    super::*,
+    crate::*,
+    anyhow::*,
+    serde::{
+        Deserialize,
+        Serialize,
+    },
+};
+
+/// a simple representation of a line made of homogeneous parts.
+///
+/// Note that this only manages CSI and SGR components
+/// and isn't a suitable representation for an arbitrary
+/// terminal input or output.
+/// I recommend you to NOT try to reuse this hack in another
+/// project unless you perfectly understand it.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TLine {
+    pub strings: Vec<TString>,
+}
+
+impl TLine {
+    pub fn change_range_style(
+        &mut self,
+        trange: TRange,
+        new_csi: String,
+    ) {
+        let TRange {
+            mut string_idx,
+            start_byte_in_string,
+            end_byte_in_string,
+        } = trange;
+        if string_idx >= self.strings.len() {
+            return;
+        }
+
+        let has_before = start_byte_in_string > 0;
+        let has_after = end_byte_in_string < self.strings[string_idx].raw.len();
+
+        if has_after {
+            self.strings.insert(
+                string_idx + 1,
+                TString {
+                    csi: self.strings[string_idx].csi.clone(),
+                    raw: self.strings[string_idx].raw[end_byte_in_string..].to_string(),
+                },
+            );
+        }
+        if has_before {
+            self.strings.insert(
+                string_idx,
+                TString {
+                    csi: self.strings[string_idx].csi.clone(),
+                    raw: self.strings[string_idx].raw[..start_byte_in_string].to_string(),
+                },
+            );
+            string_idx += 1;
+        }
+        self.strings[string_idx].csi = new_csi;
+        if has_before {
+            self.strings[string_idx].raw =
+                self.strings[string_idx].raw[start_byte_in_string..end_byte_in_string].to_string();
+        } else {
+            // we can just truncate the string
+            self.strings[string_idx].raw.truncate(end_byte_in_string);
+        }
+    }
+    pub fn from_tty(tty: &str) -> Self {
+        let tty_str: String;
+        let tty = if tty.contains('\t') {
+            tty_str = tty.replace('\t', TAB_REPLACEMENT);
+            &tty_str
+        } else {
+            tty
+        };
+        let mut builder = TLineBuilder::default();
+        builder.read(tty);
+        builder.build()
+    }
+    pub fn from_raw(raw: String) -> Self {
+        Self {
+            strings: vec![TString {
+                csi: " ".to_string(),
+                raw,
+            }],
+        }
+    }
+    pub fn to_raw(&self) -> String {
+        let mut s = String::new();
+        for ts in &self.strings {
+            s.push_str(&ts.raw);
+        }
+        s
+    }
+    pub fn bold(raw: String) -> Self {
+        Self {
+            strings: vec![TString {
+                csi: CSI_BOLD.to_string(),
+                raw,
+            }],
+        }
+    }
+    pub fn italic(raw: String) -> Self {
+        Self {
+            strings: vec![TString {
+                csi: CSI_ITALIC.to_string(),
+                raw,
+            }],
+        }
+    }
+    pub fn failed(key: &str) -> Self {
+        let mut strings = Vec::with_capacity(4);
+        strings.push(TString::new(CSI_BOLD_ORANGE, "failed"));
+        strings.push(TString::new("", ": "));
+        if let Some((module, function)) = key.rsplit_once("::") {
+            strings.push(TString {
+                csi: String::new(),
+                raw: format!("{module}::"),
+            });
+            strings.push(TString::new(CSI_BOLD_ORANGE, function));
+        } else {
+            strings.push(TString::new(CSI_BOLD_ORANGE, key));
+        }
+        TLine { strings }
+    }
+    pub fn passed(key: &str) -> Self {
+        let mut strings = Vec::with_capacity(4);
+        strings.push(TString::new(CSI_BOLD_GREEN, "passed"));
+        strings.push(TString::new("", ": "));
+        if let Some((module, function)) = key.rsplit_once("::") {
+            strings.push(TString {
+                csi: String::new(),
+                raw: format!("{module}::"),
+            });
+            strings.push(TString::new(CSI_BOLD_GREEN, function));
+        } else {
+            strings.push(TString::new(CSI_BOLD_GREEN, key));
+        }
+        TLine { strings }
+    }
+    pub fn add_badge(
+        &mut self,
+        badge: TString,
+    ) {
+        self.strings.push(badge);
+        self.strings.push(TString {
+            csi: String::new(),
+            raw: " ".to_string(),
+        });
+    }
+    pub fn add_tstring<C: Into<String>, R: Into<String>>(
+        &mut self,
+        csi: C,
+        raw: R,
+    ) {
+        self.strings.push(TString {
+            csi: csi.into(),
+            raw: raw.into(),
+        });
+    }
+    pub fn draw(
+        &self,
+        w: &mut W,
+    ) -> Result<()> {
+        for ts in &self.strings {
+            ts.draw(w)?;
+        }
+        Ok(())
+    }
+    /// draw the line but without taking more than `cols_max` cols.
+    /// Return the number of cols written
+    pub fn draw_in(
+        &self,
+        w: &mut W,
+        cols_max: usize,
+    ) -> Result<usize> {
+        let mut cols = 0;
+        for ts in &self.strings {
+            if cols >= cols_max {
+                break;
+            }
+            cols += ts.draw_in(w, cols_max - cols)?;
+        }
+        Ok(cols)
+    }
+    /// Tell whether the line displays nothing: only whitespace, none of it
+    /// styled (a background would make spaces visible)
+    pub fn is_blank(&self) -> bool {
+        self.strings
+            .iter()
+            .all(|s| s.raw.is_empty() || (s.is_unstyled() && s.is_blank()))
+    }
+    // if this line has no style, return its content
+    pub fn if_unstyled(&self) -> Option<&str> {
+        if self.strings.len() == 1 {
+            self.strings
+                .first()
+                .filter(|s| s.csi.is_empty())
+                .map(|s| s.raw.as_str())
+        } else {
+            None
+        }
+    }
+    pub fn has(
+        &self,
+        part: &str,
+    ) -> bool {
+        self.strings.iter().any(|s| s.raw.contains(part))
+    }
+}
+
+#[test]
+fn test_tline_is_blank() {
+    assert!(TLine::from_tty("").is_blank());
+    assert!(TLine::from_tty("   ").is_blank());
+    assert!(TLine::from_tty("\u{1b}[1m\u{1b}[0m").is_blank());
+    assert!(!TLine::from_tty("x").is_blank());
+    assert!(!TLine::from_tty("\u{1b}[31m x\u{1b}[0m").is_blank());
+    // spaces with a background color are visible
+    assert!(!TLine::from_tty("\u{1b}[48;2;0;127;0m    \u{1b}[49m").is_blank());
+}

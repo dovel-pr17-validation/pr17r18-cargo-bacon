@@ -1,0 +1,149 @@
+use crate::*;
+
+pub struct Pattern {
+    pub pattern: String, // might change later
+}
+
+impl Pattern {
+    // Current limitations:
+    // - a match can't span over more than 2 lines. This is probably fine.
+    /// Search for the pattern in the lines, starting at line `start`.
+    ///
+    /// The `line_idx` of the returned founds is the absolute index of the line
+    /// in the whole `lines` iterator, so passing a `start > 0` yields founds
+    /// with indices consistent with a full search.
+    ///
+    /// A match which would start in a line before `start` (i.e. a match broken
+    /// by wrapping over the `start` boundary) is ignored: we only report matches
+    /// starting at or after `start`.
+    pub fn search_lines<'i, I>(
+        &self,
+        lines: I,
+        start: usize,
+    ) -> Vec<Found>
+    where
+        I: IntoIterator<Item = &'i Line>,
+    {
+        let lines = lines.into_iter();
+        let pattern = &self.pattern;
+        let len = pattern.len();
+        let mut founds = Vec::new();
+        let mut previous_line: Option<&Line> = None;
+        for (line_idx, line) in lines.enumerate().skip(start) {
+            if line.is_continuation() {
+                if let Some(previous_line) = previous_line {
+                    // we check for a match broken by wrapping
+                    if !previous_line.content.strings.is_empty() && !line.content.strings.is_empty()
+                    {
+                        let previous_line_string_idx = previous_line.content.strings.len() - 1;
+                        let previous_last_raw =
+                            &previous_line.content.strings[previous_line_string_idx].raw;
+                        if let Some(cut) = find_cut_pattern(
+                            pattern,
+                            previous_last_raw,
+                            &line.content.strings[0].raw,
+                        ) {
+                            let found = Found {
+                                line_idx: line_idx - 1,
+                                trange: TRange {
+                                    string_idx: previous_line_string_idx,
+                                    start_byte_in_string: previous_last_raw.len() - cut,
+                                    end_byte_in_string: previous_last_raw.len(),
+                                },
+                                continued: Some(TRange {
+                                    string_idx: 0,
+                                    start_byte_in_string: 0,
+                                    end_byte_in_string: len - cut,
+                                }),
+                            };
+                            founds.push(found);
+                        }
+                    }
+                }
+            }
+            previous_line = Some(line);
+            for (string_idx, tstring) in line.content.strings.iter().enumerate() {
+                let mut offset = 0;
+                while offset + len <= tstring.raw.len() {
+                    let haystack = &tstring.raw[offset..];
+                    let Some(pos) = haystack.find(pattern) else {
+                        break;
+                    };
+                    let found = Found {
+                        line_idx,
+                        trange: TRange {
+                            string_idx,
+                            start_byte_in_string: pos + offset,
+                            end_byte_in_string: pos + offset + pattern.len(),
+                        },
+                        continued: None,
+                    };
+                    founds.push(found);
+                    offset += pos + pattern.len();
+                }
+            }
+        }
+        founds
+    }
+}
+
+fn find_cut_pattern(
+    pattern: &str,
+    a: &str,
+    b: &str,
+) -> Option<usize> {
+    let pattern = pattern.as_bytes();
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    let len = pattern.len();
+    (1..len)
+        .find(|&i| a.ends_with(&pattern[..i]) && b.starts_with(&pattern[i..]))
+        .filter(|&i| {
+            // this check is probably overkill, but let's be safe
+            std::str::from_utf8(&pattern[..i]).is_ok() && std::str::from_utf8(&pattern[i..]).is_ok()
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::*;
+
+    fn raw_line(raw: &str) -> Line {
+        Line {
+            item_idx: 0,
+            line_type: LineType::Raw(CommandStream::StdOut),
+            content: TLine::from_raw(raw.to_string()),
+        }
+    }
+
+    /// A match spanning a whole style-run (so ending exactly at the run's end)
+    /// must be found: this is the regression for the `<` vs `<=` off-by-one.
+    #[test]
+    fn find_match_equal_to_whole_string() {
+        let pattern = Pattern {
+            pattern: "error".to_string(),
+        };
+        let lines = [raw_line("error")];
+        let founds = pattern.search_lines(&lines, 0);
+        assert_eq!(founds.len(), 1);
+        assert_eq!(founds[0].line_idx, 0);
+        assert_eq!(founds[0].trange.string_idx, 0);
+        assert_eq!(founds[0].trange.start_byte_in_string, 0);
+        assert_eq!(founds[0].trange.end_byte_in_string, 5);
+    }
+
+    /// Two adjacent matches, the second ending at the string's end, must both
+    /// be found.
+    #[test]
+    fn find_adjacent_matches() {
+        let pattern = Pattern {
+            pattern: "ab".to_string(),
+        };
+        let lines = [raw_line("abab")];
+        let founds = pattern.search_lines(&lines, 0);
+        assert_eq!(founds.len(), 2);
+        assert_eq!(founds[0].trange.start_byte_in_string, 0);
+        assert_eq!(founds[1].trange.start_byte_in_string, 2);
+        assert_eq!(founds[1].trange.end_byte_in_string, 4);
+    }
+}

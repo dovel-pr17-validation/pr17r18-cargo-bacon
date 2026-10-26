@@ -1,0 +1,33 @@
+# A configuration file for ddoc - see https://dystroy.org/ddoc
+
+title: Bacon
+description: "Bacon, a background compiler"
+favicon: img/favicon.ico
+ddoc-version: 0.17
+vars: {
+    github-url: https://github.com/Canop/bacon
+    home-icon: img/logo-white.svg
+}
+
+active-plugins: [
+    "dystroy-foss"
+    "theme-top-menu"
+    "search"
+    "toc-activate"
+]
+
+site-map: {
+    Overview: index.md
+    Config: config.md
+    Analyzers: analyzers.md
+    Cookbook: cookbook.md
+    Community: {
+        "Bacon Dev": community/bacon-dev.md
+        FAQ: community/FAQ.md
+        bacon-ls: community/bacon-ls.md
+        nvim-bacon: community/nvim-bacon.md
+        emacs-bacon: community/emacs-bacon.md
+    }
+}
+
+

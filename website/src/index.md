@@ -1,0 +1,104 @@
+
+<p class=logo>
+<img class=logo width=640px src="img/logo.svg">
+</p>
+
+**bacon** is a background code checker.
+
+It's designed for minimal interaction so that you can just let it run, alongside your editor, and be notified of warnings, errors, or test failures in your code.
+
+It conveys the information you need even in a small terminal so that you can keep more screen estate for your other tasks.
+
+It shows you errors before warnings, and the first errors before the last ones, so you don't have to scroll up to find what's relevant.
+
+![vi-and-bacon](img/vi-and-bacon.png)
+
+You don't have to remember commands: the essential ones are listed at the bottom and the few other ones are shown when you hit the <kbd>h</kbd> key.
+
+# Installation
+
+Run
+
+```bash
+cargo install --locked bacon
+```
+
+Run this command too if you want to update bacon. Configuration has always been backward compatible so you won't lose anything.
+
+Some features are disabled by default. You may enable them with
+
+    cargo install --locked bacon --features "clipboard sound"
+
+Precompiled binaries are also available on the [download page](https://dystroy.org/bacon/download/): the macOS and Windows ones include `clipboard` and `sound`, the Linux ones only `clipboard`.
+
+## Shell completion
+
+Bacon completes its arguments and the jobs defined for the current project.
+Source the completion script once, for example in your `.profile`:
+
+    source <(COMPLETE=bash bacon)
+
+Replace `bash` with `zsh`, `fish`, `elvish` or `powershell` for other shells.
+
+# Usage
+
+Launch bacon in a terminal you'll keep visible
+
+```bash
+bacon
+```
+
+This launches the default job, usually based on `cargo check`:
+Bacon will watch the source directories and show you the errors and warnings found by the cargo command.
+
+You may decide to launch and watch tests by either hitting the <kbd>t</kbd> key, or by launching bacon with
+
+```bash
+bacon test
+```
+
+or `bacon nextest` if you're a nextest user.
+
+![test](img/test.png)
+
+When there's a failure, hit <kbd>f</kbd> to restrict the job to the failing test.
+Hit <kbd>esc</kbd> to get back to all tests.
+
+While in bacon, you can see Clippy warnings by hitting the <kbd>c</kbd> key. And you get back to your previous job with <kbd>esc</kbd>
+
+You may also open the `cargo doc` in your browser with the <kbd>d</kbd> key.
+
+You can configure and launch the jobs of your choice: tests, specific target compilations, examples, etc. and look at the results while you code.
+
+Hit <kbd>ctrl</kbd><kbd>j</kbd> to see all jobs.
+
+Run `bacon --help` to see all launch arguments, and read the [cookbook](cookbook.md).
+
+# Configuration
+
+See [config](config.md) for details, but here's the crust:
+
+## Global Preferences
+
+The `prefs.toml` file lets you define key bindings, or always start in summary mode or with lines wrapped.
+
+To create a default preferences file, use `bacon --prefs`.
+
+Shortcut:
+
+    $EDITOR "$(bacon --prefs)"
+
+## Project Settings
+
+You'll define in the `bacon.toml` file the jobs you need, perhaps an example to check, a run with special parameters, or the settings of clippy, as well as shortcuts to run those jobs.
+
+Create a `bacon.toml` file by running
+
+    bacon --init
+
+This file already contains some standard jobs. Add your own, for example
+
+```toml
+[jobs.check-win]
+command = ["cargo", "check", "--target", "x86_64-pc-windows-gnu"]
+```
